@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3DB6F2"/>
+      <stop offset="1" stop-color="#1565E0"/>
+    </linearGradient>
+    <linearGradient id="mouse" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#E8EEF6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- rounded-rect app tile -->
+  <rect x="92" y="92" width="840" height="840" rx="190" fill="url(#bg)"/>
+
+  <!-- motion arrows (the "jiggle") -->
+  <g fill="none" stroke="#FFFFFF" stroke-width="30" stroke-linecap="round" stroke-linejoin="round" opacity="0.92">
+    <path d="M 300 470 L 250 522 L 300 574"/>
+    <path d="M 374 470 L 324 522 L 374 574"/>
+    <path d="M 724 470 L 774 522 L 724 574"/>
+    <path d="M 650 470 L 700 522 L 650 574"/>
+  </g>
+
+  <!-- mouse body -->
+  <rect x="430" y="300" width="164" height="424" rx="82" fill="url(#mouse)" stroke="#11264A" stroke-width="10"/>
+  <!-- top/bottom button divider -->
+  <path d="M 430 470 L 594 470" stroke="#C2CEDF" stroke-width="8" stroke-linecap="round"/>
+  <!-- scroll wheel -->
+  <rect x="503" y="350" width="18" height="66" rx="9" fill="#1565E0"/>
+</svg>
