@@ -1,0 +1,90 @@
+# Mouse Jiggler (macOS)
+
+A native macOS app that nudges the mouse cursor by ±1px after the machine has been
+idle for a configurable threshold (default 30 s) — keeping the Mac "active". It is a
+.NET MAUI port of `mouse_jiggle.py`, built on the
+[dotnet/maui-labs native macOS (AppKit) backend](https://github.com/dotnet/maui-labs/tree/main/platforms/MacOS)
+(`net10.0-macos`, **not** Mac Catalyst), and is structured to be publishable to the
+Mac App Store.
+
+## How it works
+
+| Method | Resets idle timer? | Permission | When used |
+| --- | --- | --- | --- |
+| Synthetic mouse event (`CGEventPost`) | Yes — keeps Teams/Slack "active" | Accessibility (Post Events) | Default, once granted |
+| Cursor warp (`CGWarpMouseCursorPosition`) | Cursor moves only | None (sandbox-clean) | Fallback until permission granted |
+
+On start the app checks the Accessibility permission. If granted it posts synthetic
+events; otherwise it asks macOS to prompt the user and warps the cursor in the
+meantime, automatically upgrading to synthetic events once permission is granted.
+
+## Project layout
+
+```
+MouseJiggler/
+├── MouseJiggler.slnx
+├── src/MouseJiggler/
+│   ├── MouseJiggler.csproj
+│   ├── Main.cs / MouseJigglerDelegate.cs / MauiProgram.cs   (AppKit bootstrap)
+│   ├── App.cs                                               (window)
+│   ├── MainPage.cs                                          (UI: toggle, threshold, status)
+│   ├── Interop/CoreGraphicsNative.cs                        (CoreGraphics P/Invoke)
+│   ├── Services/MouseJiggleService.cs                       (idle check + jiggle loop)
+│   └── Platforms/MacOS/
+│       ├── Info.plist                                       (bundle id, category)
+│       └── Entitlements.plist                               (App Sandbox)
+└── README.md
+```
+
+## Prerequisites
+
+- macOS 14.0+ and the .NET 10 SDK.
+- The **macOS workload** (the `maui` workload alone does not include the native
+  `net10.0-macos` target):
+
+  ```bash
+  sudo dotnet workload install macos
+  ```
+
+The maui-labs macOS backend packages (`Microsoft.Maui.Platforms.MacOS[.Essentials]`)
+are restored from NuGet. The matching `maui-macos` project *template* is not on
+NuGet — this project was scaffolded from the template source in the maui-labs repo.
+
+## Build & run
+
+```bash
+dotnet build src/MouseJiggler/MouseJiggler.csproj -c Debug
+open src/MouseJiggler/bin/Debug/net10.0-macos/osx-arm64/Mouse\ Jiggler.app
+```
+
+(Hot reload is not supported by the AppKit backend — rebuild and relaunch.)
+
+## Publishing to the Mac App Store
+
+These steps require a paid Apple Developer account and cannot be scripted here:
+
+1. In the Apple Developer portal, register the App ID `com.idip-solution.mousejiggler`
+   and create **Mac App Distribution** and **Mac Installer Distribution** signing
+   identities / provisioning profiles.
+2. Confirm `Info.plist` (bundle id, version, `LSApplicationCategoryType`) and
+   `Entitlements.plist` (`com.apple.security.app-sandbox`) match the App Store listing.
+3. Produce a signed, sandboxed Release build:
+
+   ```bash
+   dotnet publish src/MouseJiggler/MouseJiggler.csproj -c Release \
+     -p:CodesignKey="3rd Party Mac Developer Application: <Your Team>" \
+     -p:CodesignProvision="<your Mac App Store profile>"
+   ```
+
+4. Package as a signed `.pkg` and upload via Transporter / Xcode Organizer, then
+   submit for review in App Store Connect.
+5. Verify the sandbox entitlement is embedded:
+
+   ```bash
+   codesign -d --entitlements - "src/MouseJiggler/bin/Release/net10.0-macos/osx-arm64/Mouse Jiggler.app"
+   ```
+
+> **App Store note:** Apps that move the cursor / post events undergo review scrutiny.
+> The cursor-warp fallback keeps the app functional even if the user declines the
+> Accessibility permission, which helps with the "works without elevated permission"
+> review expectation.
