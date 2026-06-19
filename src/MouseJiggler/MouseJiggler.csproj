@@ -14,8 +14,20 @@
     <ApplicationId>com.idip-solution.mousejiggler</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
+  </PropertyGroup>
 
-    <!-- Sandbox entitlements are required for Mac App Store distribution -->
+  <!--
+    Local debug: sign with a stable Apple Development identity so the macOS
+    Accessibility (post-events) grant survives rebuilds. Ad-hoc signing changes the
+    binary hash every build and silently revokes the grant. No sandbox here, so no
+    provisioning profile is needed to run locally.
+  -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+    <CodesignKey>Apple Development: Mark Allibone (QYJQ2PGM22)</CodesignKey>
+  </PropertyGroup>
+
+  <!-- Release / App Store: sandboxed (required for the store). -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <CodesignEntitlements>Platforms/MacOS/Entitlements.plist</CodesignEntitlements>
   </PropertyGroup>
 

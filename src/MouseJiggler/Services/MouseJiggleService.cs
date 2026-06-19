@@ -52,6 +52,8 @@ public sealed class MouseJiggleService : IDisposable
 	private readonly Timer _timer;
 	private int _direction = 1; // alternates between +1 and -1, like the Python script
 	private bool? _syntheticWorks; // null = unknown/untested yet
+	private bool _proofPending;    // a synthetic post is awaiting an idle-reset check
+	private double _proofBaseline; // idle seconds at the moment of that post
 
 	public MouseJiggleService()
 	{
@@ -115,21 +117,29 @@ public sealed class MouseJiggleService : IDisposable
 	private void OnTick(object? sender, ElapsedEventArgs e)
 	{
 		var idle = CoreGraphicsNative.GetIdleSeconds();
-		var jiggled = false;
 
+		// Resolve a synthetic post from a previous tick. We check on a later tick (not
+		// immediately after posting) so the HID idle counter has time to reflect the
+		// event — reading it in the same instant gives false negatives.
+		if (_proofPending)
+		{
+			_syntheticWorks = idle <= _proofBaseline - IdleResetProofSeconds;
+			_proofPending = false;
+		}
+
+		var jiggled = false;
 		if (idle >= IdleThresholdSeconds)
 		{
 			Jiggle(idleBefore: idle);
 			jiggled = true;
-			idle = CoreGraphicsNative.GetIdleSeconds(); // reflect the (possible) reset
 		}
 
-		RaiseStatus(idle, jiggled);
+		RaiseStatus(CoreGraphicsNative.GetIdleSeconds(), jiggled);
 	}
 
 	/// <param name="idleBefore">
-	/// Idle seconds measured just before the nudge. When this is high enough we can use
-	/// the post-nudge idle reading to prove whether synthetic events actually work.
+	/// Idle seconds measured just before the nudge. When this is high enough, a working
+	/// synthetic post will visibly reset it — which the next tick uses as proof.
 	/// </param>
 	private void Jiggle(double idleBefore = 0)
 	{
@@ -141,14 +151,12 @@ public sealed class MouseJiggleService : IDisposable
 		{
 			CoreGraphicsNative.PostMouseMove(target);
 
-			// Only conclusive when we were genuinely idle before the post.
-			if (idleBefore >= IdleResetProofSeconds)
+			// Arm an idle-reset proof, but only when we were genuinely idle (so a reset
+			// is meaningful) and haven't concluded yet.
+			if (_syntheticWorks is null && idleBefore >= IdleResetProofSeconds)
 			{
-				var idleAfter = CoreGraphicsNative.GetIdleSeconds();
-				if (idleAfter <= idleBefore - IdleResetProofSeconds)
-					_syntheticWorks = true;          // idle collapsed → event registered
-				else
-					_syntheticWorks = false;         // no reset → posting is blocked
+				_proofPending = true;
+				_proofBaseline = idleBefore;
 			}
 		}
 
