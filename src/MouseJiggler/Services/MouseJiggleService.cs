@@ -5,14 +5,17 @@ using Timer = System.Timers.Timer;
 
 namespace MouseJiggler.Services;
 
-/// <summary>How the cursor is being moved.</summary>
+/// <summary>How the cursor is being moved, as reported to the UI.</summary>
 public enum JiggleMethod
 {
-	/// <summary>Synthetic mouse-move event — resets the idle timer. Needs Accessibility permission.</summary>
-	SyntheticEvent,
+	/// <summary>Running, but we haven't confirmed yet whether synthetic events work.</summary>
+	Trying,
 
-	/// <summary>Cursor warp — no permission needed, sandbox-clean fallback.</summary>
-	CursorWarp,
+	/// <summary>Synthetic mouse events confirmed working — resets the idle timer.</summary>
+	SyntheticActive,
+
+	/// <summary>Synthetic events are blocked; falling back to cursor warp (no idle reset).</summary>
+	WarpFallback,
 }
 
 /// <summary>Snapshot of the jiggler state, raised on every check.</summary>
@@ -21,24 +24,34 @@ public readonly record struct JiggleStatus(
 	double IdleSeconds,
 	double IdleThreshold,
 	JiggleMethod Method,
-	bool PermissionGranted,
+	long JiggleCount,
+	DateTimeOffset? LastJiggleAt,
 	bool JustJiggled);
 
 /// <summary>
-/// Port of mouse_jiggle.py: once the system has been idle past a threshold, nudge
-/// the cursor by ±1px (alternating direction) to keep the machine "active".
+/// Port of mouse_jiggle.py: once the system has been idle past a threshold, nudge the
+/// cursor by ±1px (alternating direction) to keep the machine "active".
 ///
-/// Default behaviour uses a synthetic mouse event (resets the idle timer); when the
-/// Accessibility permission has not been granted it falls back to a cursor warp and
-/// automatically upgrades to synthetic events once the user grants permission.
+/// Method is resolved <b>empirically</b>: we always try a synthetic mouse event first
+/// and look at whether the idle timer actually resets. If it does, synthetic events
+/// work (and reset the HID idle timer, keeping the Mac "active"); if posting is blocked
+/// (permission not granted / not yet in effect) we fall back to a cursor warp so the
+/// cursor still moves. We deliberately do NOT gate on <c>CGPreflightPostEventAccess</c>,
+/// which caches per-process and would get stuck reporting "denied" after a grant.
 /// </summary>
 public sealed class MouseJiggleService : IDisposable
 {
 	private const int JigglePixels = 1;
 	private const double CheckIntervalSeconds = 1.0;
 
+	// A jiggle only happens when idle >= threshold, so idle is "high" at that moment.
+	// After a working synthetic post the idle timer collapses toward 0; we treat a drop
+	// of more than this many seconds as proof the event registered.
+	private const double IdleResetProofSeconds = 2.0;
+
 	private readonly Timer _timer;
 	private int _direction = 1; // alternates between +1 and -1, like the Python script
+	private bool? _syntheticWorks; // null = unknown/untested yet
 
 	public MouseJiggleService()
 	{
@@ -51,11 +64,20 @@ public sealed class MouseJiggleService : IDisposable
 
 	public bool IsRunning { get; private set; }
 
-	public JiggleMethod ActiveMethod { get; private set; } = JiggleMethod.CursorWarp;
+	public long JiggleCount { get; private set; }
 
-	public bool PermissionGranted { get; private set; }
+	public DateTimeOffset? LastJiggleAt { get; private set; }
 
-	/// <summary>Raised on every check (≈1/s) with the current state. May fire off the UI thread.</summary>
+	public JiggleMethod Method =>
+		!IsRunning ? JiggleMethod.Trying
+		: _syntheticWorks switch
+		{
+			true => JiggleMethod.SyntheticActive,
+			false => JiggleMethod.WarpFallback,
+			null => JiggleMethod.Trying,
+		};
+
+	/// <summary>Raised on every check (≈1/s) and on every jiggle. May fire off the UI thread.</summary>
 	public event Action<JiggleStatus>? StatusChanged;
 
 	public void Start()
@@ -63,7 +85,11 @@ public sealed class MouseJiggleService : IDisposable
 		if (IsRunning)
 			return;
 
-		ResolveMethod(requestIfMissing: true);
+		// Read the grant state once as a hint and surface the system prompt if needed.
+		// We do NOT use this to choose the method — detection is empirical (see Jiggle).
+		if (!CoreGraphicsNative.CanPostEvents())
+			CoreGraphicsNative.RequestPostEventsAccess();
+
 		IsRunning = true;
 		_timer.Start();
 		RaiseStatus(idle: CoreGraphicsNative.GetIdleSeconds(), justJiggled: false);
@@ -79,56 +105,65 @@ public sealed class MouseJiggleService : IDisposable
 		RaiseStatus(idle: CoreGraphicsNative.GetIdleSeconds(), justJiggled: false);
 	}
 
+	/// <summary>Perform one jiggle immediately, regardless of idle time (manual "Test").</summary>
+	public void JiggleNow()
+	{
+		Jiggle();
+		RaiseStatus(idle: CoreGraphicsNative.GetIdleSeconds(), justJiggled: true);
+	}
+
 	private void OnTick(object? sender, ElapsedEventArgs e)
 	{
-		// If we're warping only because permission was missing, re-check: the user
-		// may have granted it via the system prompt since we started.
-		if (ActiveMethod == JiggleMethod.CursorWarp)
-			ResolveMethod(requestIfMissing: false);
-
 		var idle = CoreGraphicsNative.GetIdleSeconds();
 		var jiggled = false;
 
 		if (idle >= IdleThresholdSeconds)
 		{
-			Jiggle();
+			Jiggle(idleBefore: idle);
 			jiggled = true;
+			idle = CoreGraphicsNative.GetIdleSeconds(); // reflect the (possible) reset
 		}
 
 		RaiseStatus(idle, jiggled);
 	}
 
-	private void Jiggle()
+	/// <param name="idleBefore">
+	/// Idle seconds measured just before the nudge. When this is high enough we can use
+	/// the post-nudge idle reading to prove whether synthetic events actually work.
+	/// </param>
+	private void Jiggle(double idleBefore = 0)
 	{
 		var pos = CoreGraphicsNative.GetCursorPosition();
 		var target = new CGPoint(pos.X + (_direction * JigglePixels), pos.Y);
 
-		if (ActiveMethod == JiggleMethod.SyntheticEvent)
+		// Prefer synthetic events unless we've proven they're blocked.
+		if (_syntheticWorks != false)
+		{
 			CoreGraphicsNative.PostMouseMove(target);
-		else
+
+			// Only conclusive when we were genuinely idle before the post.
+			if (idleBefore >= IdleResetProofSeconds)
+			{
+				var idleAfter = CoreGraphicsNative.GetIdleSeconds();
+				if (idleAfter <= idleBefore - IdleResetProofSeconds)
+					_syntheticWorks = true;          // idle collapsed → event registered
+				else
+					_syntheticWorks = false;         // no reset → posting is blocked
+			}
+		}
+
+		// If synthetic is known-blocked, warp so the cursor still moves.
+		if (_syntheticWorks == false)
 			CoreGraphicsNative.WarpCursor(target);
 
 		_direction = -_direction; // flip for next time
-	}
-
-	private void ResolveMethod(bool requestIfMissing)
-	{
-		PermissionGranted = CoreGraphicsNative.CanPostEvents();
-
-		if (PermissionGranted)
-		{
-			ActiveMethod = JiggleMethod.SyntheticEvent;
-			return;
-		}
-
-		ActiveMethod = JiggleMethod.CursorWarp;
-		if (requestIfMissing)
-			CoreGraphicsNative.RequestPostEventsAccess(); // macOS shows the prompt
+		JiggleCount++;
+		LastJiggleAt = DateTimeOffset.Now;
 	}
 
 	private void RaiseStatus(double idle, bool justJiggled)
 		=> StatusChanged?.Invoke(new JiggleStatus(
-			IsRunning, idle, IdleThresholdSeconds, ActiveMethod, PermissionGranted, justJiggled));
+			IsRunning, idle, IdleThresholdSeconds, Method, JiggleCount, LastJiggleAt, justJiggled));
 
 	public void Dispose()
 	{

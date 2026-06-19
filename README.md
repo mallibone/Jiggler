@@ -11,12 +11,23 @@ Mac App Store.
 
 | Method | Resets idle timer? | Permission | When used |
 | --- | --- | --- | --- |
-| Synthetic mouse event (`CGEventPost`) | Yes — keeps Teams/Slack "active" | Accessibility (Post Events) | Default, once granted |
-| Cursor warp (`CGWarpMouseCursorPosition`) | Cursor moves only | None (sandbox-clean) | Fallback until permission granted |
+| Synthetic mouse event (`CGEventPost`) | Yes — keeps Teams/Slack "active" | Accessibility (Post Events) | Preferred; used whenever posting actually works |
+| Cursor warp (`CGWarpMouseCursorPosition`) | Cursor moves only | None (sandbox-clean) | Fallback when posting is blocked |
 
-On start the app checks the Accessibility permission. If granted it posts synthetic
-events; otherwise it asks macOS to prompt the user and warps the cursor in the
-meantime, automatically upgrading to synthetic events once permission is granted.
+`CGEvent.post` is allowed in the App Sandbox — `PostEvent` is a limited TCC privilege
+distinct from full Accessibility — so the synthetic-event path is valid for the App
+Store.
+
+**Method detection is empirical, not preflight-based.** `CGPreflightPostEventAccess()`
+caches its result per process and can get stuck reporting "denied" after a grant, so
+the app does not gate on it. Instead it always *attempts* a synthetic event while idle
+and checks whether the system idle timer actually reset: if it did, synthetic events
+work (shown as "Synthetic events — keeping your Mac active"); if not, it falls back to
+a cursor warp and shows a banner prompting the user to grant Accessibility and relaunch
+(a fresh TCC grant only takes effect for new processes).
+
+The window shows a live indicator — running state, idle progress, a jiggle counter and
+the last-jiggle time — plus a "Test jiggle now" button for instant confirmation.
 
 ## Project layout
 
