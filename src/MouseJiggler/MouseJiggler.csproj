@@ -26,9 +26,17 @@
     <CodesignKey>Apple Development: Mark Allibone (QYJQ2PGM22)</CodesignKey>
   </PropertyGroup>
 
-  <!-- Release / App Store: sandboxed (required for the store). -->
+  <!--
+    Release / App Store: sandboxed (required for the store) and optimized.
+    - RunAOTCompilation: Mono AOT (the .NET-for-macOS runtime is Mono). This is the
+      supported AOT here. NativeAOT (PublishAot) is NOT supported for net*-macos / the
+      maui-labs AppKit backend (it targets iOS & Mac Catalyst only), and a "single
+      executable" doesn't apply — a macOS app ships as a signed .app bundle.
+    - Trimming (ILLink) is already enabled by default for macOS Release builds.
+  -->
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <CodesignEntitlements>Platforms/MacOS/Entitlements.plist</CodesignEntitlements>
+    <RunAOTCompilation>true</RunAOTCompilation>
   </PropertyGroup>
 
   <ItemGroup>
