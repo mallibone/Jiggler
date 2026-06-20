@@ -26,6 +26,11 @@
     <CodesignKey>Apple Development: Mark Allibone (QYJQ2PGM22)</CodesignKey>
   </PropertyGroup>
 
+  <!-- DevFlow in-app agent for inspection/automation. Debug-only — never shipped. -->
+  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
+    <PackageReference Include="Microsoft.Maui.DevFlow.Agent" Version="0.1.0-preview.11.26317.2" />
+  </ItemGroup>
+
   <!--
     Release / App Store: sandboxed (required for the store) and optimized.
     - RunAOTCompilation: Mono AOT (the .NET-for-macOS runtime is Mono). This is the

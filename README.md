@@ -107,3 +107,24 @@ These steps require a paid Apple Developer account and cannot be scripted here:
 > The cursor-warp fallback keeps the app functional even if the user declines the
 > Accessibility permission, which helps with the "works without elevated permission"
 > review expectation.
+
+## Local dev: DevFlow inspection (Debug only)
+
+Debug builds embed the [.NET MAUI DevFlow](https://learn.microsoft.com/en-us/dotnet/maui/developer-tools/devflow/)
+in-app agent (`Microsoft.Maui.DevFlow.Agent`, registered under `#if DEBUG` in
+`MauiProgram.cs`) — it is never included in Release. It lets you inspect and drive the
+running app over a local HTTP API, which is handy on this AppKit backend (no hot reload,
+and OS Screen Recording can block `screencapture`). The agent listens on
+`127.0.0.1:9223`.
+
+```bash
+dotnet tool install -g Microsoft.Maui.Cli --prerelease   # provides `maui devflow`
+maui devflow ui status     --agent-port 9223
+maui devflow ui screenshot --agent-port 9223 --output shot.png --overwrite --scale native
+maui devflow ui tree       --agent-port 9223
+maui devflow ui tap        --agent-port 9223 --text "Start"
+```
+
+> Note: DevFlow's docs list Mac Catalyst as the supported Mac target, but the agent
+> ships a `net10.0-macos` build that depends on `Microsoft.Maui.Platforms.MacOS` and
+> works against this AppKit app.
