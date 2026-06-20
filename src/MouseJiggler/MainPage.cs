@@ -44,13 +44,9 @@ public class MainPage : ContentPage
 			HeightRequest = 46,
 			StrokeThickness = 0,
 			StrokeShape = new RoundRectangle { CornerRadius = 12 },
-			Background = new LinearGradientBrush(
-				new GradientStopCollection
-				{
-					new GradientStop(Color.FromArgb("#3DB6F2"), 0f),
-					new GradientStop(Color.FromArgb("#1565E0"), 1f),
-				},
-				new Point(0, 0), new Point(0, 1)),
+			// Note: the maui-labs Border handler doesn't paint a gradient Background brush,
+			// so use a solid colour (matches the Accent used on the primary button).
+			BackgroundColor = Color.FromArgb("#1E73E6"),
 			Content = new Border
 			{
 				WidthRequest = 14,
