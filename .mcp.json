@@ -1,7 +1,7 @@
 {
   "mcpServers": {
     "maui-devflow": {
-      "command": "/Users/mallibone/.dotnet/tools/maui",
+      "command": "maui",
       "args": ["devflow", "mcp"]
     }
   }

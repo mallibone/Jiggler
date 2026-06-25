@@ -23,7 +23,8 @@
     provisioning profile is needed to run locally.
   -->
   <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
-    <CodesignKey>Apple Development: Mark Allibone (QYJQ2PGM22)</CodesignKey>
+    <!-- Replace with your own Apple Development identity: run `security find-identity -v -p codesigning` -->
+    <CodesignKey>Apple Development: Your Name (TEAMID)</CodesignKey>
   </PropertyGroup>
 
   <!-- DevFlow in-app agent for inspection/automation. Debug-only — never shipped. -->
