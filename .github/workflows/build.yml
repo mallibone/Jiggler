@@ -145,10 +145,10 @@ jobs:
         run: dotnet workload install maui
 
       - name: Publish
-        # Narrow TargetFrameworks to the Windows TFM only: otherwise the workload
-        # resolver inspects the project's full TargetFrameworks (which includes
-        # net10.0-macos) and demands the macos workload on the Windows runner.
-        run: dotnet publish "${{ env.PROJECT }}" -c Release -f net10.0-windows -p:TargetFrameworks=net10.0-windows
+        # The project's TargetFrameworks is host-conditional (see the .csproj), so on
+        # this Windows runner it already resolves to net10.0-windows only — the macos
+        # workload is never demanded.
+        run: dotnet publish "${{ env.PROJECT }}" -c Release -f net10.0-windows
 
       - name: Stage exe
         shell: pwsh
