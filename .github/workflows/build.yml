@@ -25,7 +25,9 @@ jobs:
   # notarize + staple with the real Developer ID certificate.
   # ---------------------------------------------------------------------------
   build-macos:
-    runs-on: macos-15
+    # macos-26 ships Xcode 26.5 (the default), which the net10.0-macos workload
+    # requires; macos-15 only has Xcode 16.x and fails the SDK's Xcode check.
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
 
