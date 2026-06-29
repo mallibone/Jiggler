@@ -1,6 +1,4 @@
 using System.Timers;
-using CoreGraphics;
-using MouseJiggler.Interop;
 using Timer = System.Timers.Timer;
 
 namespace MouseJiggler.Services;
@@ -34,10 +32,13 @@ public readonly record struct JiggleStatus(
 ///
 /// Method is resolved <b>empirically</b>: we always try a synthetic mouse event first
 /// and look at whether the idle timer actually resets. If it does, synthetic events
-/// work (and reset the HID idle timer, keeping the Mac "active"); if posting is blocked
+/// work (and reset the idle timer, keeping the machine "active"); if posting is blocked
 /// (permission not granted / not yet in effect) we fall back to a cursor warp so the
-/// cursor still moves. We deliberately do NOT gate on <c>CGPreflightPostEventAccess</c>,
-/// which caches per-process and would get stuck reporting "denied" after a grant.
+/// cursor still moves. We deliberately do NOT gate on a preflight permission check,
+/// which (on macOS) caches per-process and would get stuck reporting "denied" after a grant.
+///
+/// All OS interaction goes through <see cref="IMouseInput"/> so the logic is identical on
+/// every platform; only the injected implementation differs (CoreGraphics / user32).
 /// </summary>
 public sealed class MouseJiggleService : IDisposable
 {
@@ -49,14 +50,16 @@ public sealed class MouseJiggleService : IDisposable
 	// of more than this many seconds as proof the event registered.
 	private const double IdleResetProofSeconds = 2.0;
 
+	private readonly IMouseInput _input;
 	private readonly Timer _timer;
 	private int _direction = 1; // alternates between +1 and -1, like the Python script
 	private bool? _syntheticWorks; // null = unknown/untested yet
 	private bool _proofPending;    // a synthetic post is awaiting an idle-reset check
 	private double _proofBaseline; // idle seconds at the moment of that post
 
-	public MouseJiggleService()
+	public MouseJiggleService(IMouseInput input)
 	{
+		_input = input;
 		_timer = new Timer(CheckIntervalSeconds * 1000) { AutoReset = true };
 		_timer.Elapsed += OnTick;
 	}
@@ -89,12 +92,12 @@ public sealed class MouseJiggleService : IDisposable
 
 		// Read the grant state once as a hint and surface the system prompt if needed.
 		// We do NOT use this to choose the method — detection is empirical (see Jiggle).
-		if (!CoreGraphicsNative.CanPostEvents())
-			CoreGraphicsNative.RequestPostEventsAccess();
+		if (!_input.CanPostEvents())
+			_input.RequestPostEventsAccess();
 
 		IsRunning = true;
 		_timer.Start();
-		RaiseStatus(idle: CoreGraphicsNative.GetIdleSeconds(), justJiggled: false);
+		RaiseStatus(idle: _input.GetIdleSeconds(), justJiggled: false);
 	}
 
 	public void Stop()
@@ -104,19 +107,19 @@ public sealed class MouseJiggleService : IDisposable
 
 		_timer.Stop();
 		IsRunning = false;
-		RaiseStatus(idle: CoreGraphicsNative.GetIdleSeconds(), justJiggled: false);
+		RaiseStatus(idle: _input.GetIdleSeconds(), justJiggled: false);
 	}
 
 	/// <summary>Perform one jiggle immediately, regardless of idle time (manual "Test").</summary>
 	public void JiggleNow()
 	{
 		Jiggle();
-		RaiseStatus(idle: CoreGraphicsNative.GetIdleSeconds(), justJiggled: true);
+		RaiseStatus(idle: _input.GetIdleSeconds(), justJiggled: true);
 	}
 
 	private void OnTick(object? sender, ElapsedEventArgs e)
 	{
-		var idle = CoreGraphicsNative.GetIdleSeconds();
+		var idle = _input.GetIdleSeconds();
 
 		// Resolve a synthetic post from a previous tick. We check on a later tick (not
 		// immediately after posting) so the HID idle counter has time to reflect the
@@ -134,7 +137,7 @@ public sealed class MouseJiggleService : IDisposable
 			jiggled = true;
 		}
 
-		RaiseStatus(CoreGraphicsNative.GetIdleSeconds(), jiggled);
+		RaiseStatus(_input.GetIdleSeconds(), jiggled);
 	}
 
 	/// <param name="idleBefore">
@@ -143,13 +146,13 @@ public sealed class MouseJiggleService : IDisposable
 	/// </param>
 	private void Jiggle(double idleBefore = 0)
 	{
-		var pos = CoreGraphicsNative.GetCursorPosition();
-		var target = new CGPoint(pos.X + (_direction * JigglePixels), pos.Y);
+		var pos = _input.GetCursorPosition();
+		var target = new MousePoint(pos.X + (_direction * JigglePixels), pos.Y);
 
 		// Prefer synthetic events unless we've proven they're blocked.
 		if (_syntheticWorks != false)
 		{
-			CoreGraphicsNative.PostMouseMove(target);
+			_input.PostMouseMove(target);
 
 			// Arm an idle-reset proof, but only when we were genuinely idle (so a reset
 			// is meaningful) and haven't concluded yet.
@@ -162,7 +165,7 @@ public sealed class MouseJiggleService : IDisposable
 
 		// If synthetic is known-blocked, warp so the cursor still moves.
 		if (_syntheticWorks == false)
-			CoreGraphicsNative.WarpCursor(target);
+			_input.WarpCursor(target);
 
 		_direction = -_direction; // flip for next time
 		JiggleCount++;

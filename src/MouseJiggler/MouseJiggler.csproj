@@ -1,62 +1,112 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0-macos</TargetFramework>
-    <OutputType>Exe</OutputType>
+    <TargetFrameworks>net10.0-macos;net10.0-windows</TargetFrameworks>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseMaui>true</UseMaui>
     <SingleProject>true</SingleProject>
-    <SupportedOSPlatformVersion>14.0</SupportedOSPlatformVersion>
 
-    <!-- App identity (App Store) -->
+    <!-- App identity -->
     <ApplicationTitle>Mouse Jiggler</ApplicationTitle>
     <ApplicationId>com.idip-solution.mousejiggler</ApplicationId>
     <ApplicationVersion>1</ApplicationVersion>
     <ApplicationDisplayVersion>1.0</ApplicationDisplayVersion>
   </PropertyGroup>
 
+  <!-- ===== macOS (maui-labs native AppKit backend) ===== -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('-macos'))">
+    <OutputType>Exe</OutputType>
+    <SupportedOSPlatformVersion>14.0</SupportedOSPlatformVersion>
+    <DefineConstants>$(DefineConstants);MACOS</DefineConstants>
+  </PropertyGroup>
+
   <!--
     Local debug: sign with a stable Apple Development identity so the macOS
     Accessibility (post-events) grant survives rebuilds. Ad-hoc signing changes the
-    binary hash every build and silently revokes the grant. No sandbox here, so no
-    provisioning profile is needed to run locally.
+    binary hash every build and silently revokes the grant.
   -->
-  <PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+  <PropertyGroup Condition="$(TargetFramework.Contains('-macos')) and '$(Configuration)' == 'Debug'">
     <!-- Replace with your own Apple Development identity: run `security find-identity -v -p codesigning` -->
     <CodesignKey>Apple Development: Your Name (TEAMID)</CodesignKey>
   </PropertyGroup>
 
-  <!-- DevFlow in-app agent for inspection/automation. Debug-only — never shipped. -->
-  <ItemGroup Condition="'$(Configuration)' == 'Debug'">
-    <PackageReference Include="Microsoft.Maui.DevFlow.Agent" Version="0.1.0-preview.11.26317.2" />
-  </ItemGroup>
-
   <!--
-    Release / App Store: sandboxed (required for the store) and optimized.
-    - RunAOTCompilation: Mono AOT (the .NET-for-macOS runtime is Mono). This is the
-      supported AOT here. NativeAOT (PublishAot) is NOT supported for net*-macos / the
-      maui-labs AppKit backend (it targets iOS & Mac Catalyst only), and a "single
-      executable" doesn't apply — a macOS app ships as a signed .app bundle.
+    Release / App Store (macOS): sandboxed and optimized.
+    - RunAOTCompilation: Mono AOT (the .NET-for-macOS runtime is Mono).
     - Trimming (ILLink) is already enabled by default for macOS Release builds.
   -->
-  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+  <PropertyGroup Condition="$(TargetFramework.Contains('-macos')) and '$(Configuration)' == 'Release'">
     <CodesignEntitlements>Platforms/MacOS/Entitlements.plist</CodesignEntitlements>
     <RunAOTCompilation>true</RunAOTCompilation>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!-- Auto-converted to AppIcon.icns at build time (sips + iconutil). -->
-    <MauiIcon Include="Resources\AppIcon\appicon.png" />
+  <ItemGroup Condition="$(TargetFramework.Contains('-macos'))">
+    <PackageReference Include="Microsoft.Maui.Platforms.MacOS" Version="0.1.0-preview.11.26317.2" />
+    <PackageReference Include="Microsoft.Maui.Platforms.MacOS.Essentials" Version="0.1.0-preview.11.26317.2" />
 
     <!-- Extra Info.plist keys (category, copyright) merged into the generated manifest. -->
     <PartialAppManifest Include="Platforms\MacOS\PartialInfo.plist" />
   </ItemGroup>
 
+  <!-- DevFlow in-app agent for inspection/automation. macOS Debug only — never shipped. -->
+  <ItemGroup Condition="$(TargetFramework.Contains('-macos')) and '$(Configuration)' == 'Debug'">
+    <PackageReference Include="Microsoft.Maui.DevFlow.Agent" Version="0.1.0-preview.11.26317.2" />
+  </ItemGroup>
+
+  <!-- ===== Windows (maui-labs WPF backend) ===== -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('-windows'))">
+    <OutputType>WinExe</OutputType>
+    <UseWPF>true</UseWPF>
+    <EnableDefaultXamlItems>false</EnableDefaultXamlItems>
+    <DefineConstants>$(DefineConstants);WINDOWS</DefineConstants>
+    <!-- Allows the Windows TFM to be restored/evaluated on non-Windows hosts (e.g. macOS).
+         Actually building/running the Windows head still requires a Windows machine. -->
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
+  </PropertyGroup>
+
+  <!--
+    Windows Release: publish a single, self-contained, optimized .exe.
+      dotnet publish -f net10.0-windows -c Release
+    - Self-contained + single file → one portable .exe, no .NET install required.
+    - ReadyToRun precompiles IL to native for faster startup.
+    - Compression shrinks the bundled payload; native libs are packed and self-extracted.
+    - No IL trimming: WPF is not trim-safe (heavy reflection), so trimming is left off.
+    Override the target architecture with -r win-arm64 if you need a native ARM64 build.
+  -->
+  <PropertyGroup Condition="$(TargetFramework.Contains('-windows')) and '$(Configuration)' == 'Release'">
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishReadyToRun>true</PublishReadyToRun>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <!-- Don't copy dependencies' .pdb/.xml doc files next to the exe (WebView2 ships XML docs). -->
+    <AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
+  </PropertyGroup>
+
+  <ItemGroup Condition="$(TargetFramework.Contains('-windows'))">
+    <PackageReference Include="Microsoft.Maui.Platforms.Windows.WPF" Version="0.1.0-preview.11.26317.2" />
+    <PackageReference Include="Microsoft.Maui.Platforms.Windows.WPF.Essentials" Version="0.1.0-preview.11.26317.2" />
+
+    <!-- WPF entry point: declares the [STAThread] Main and the MauiWPFApplication host. -->
+    <ApplicationDefinition Include="Platforms\Windows\MauiWpfHost.xaml" />
+
+    <!-- macOS-only sources (AppKit / CoreGraphics) live in a plain folder so the macOS head
+         compiles them reliably; keep them out of the Windows build. -->
+    <Compile Remove="MacOS\**\*.cs" />
+  </ItemGroup>
+
+  <!-- ===== Shared ===== -->
+  <ItemGroup>
+    <!-- Auto-converted to the platform icon format at build time. -->
+    <MauiIcon Include="Resources\AppIcon\appicon.png" />
+  </ItemGroup>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.41" />
-    <PackageReference Include="Microsoft.Maui.Platforms.MacOS" Version="0.1.0-preview.11.26317.2" />
-    <PackageReference Include="Microsoft.Maui.Platforms.MacOS.Essentials" Version="0.1.0-preview.11.26317.2" />
   </ItemGroup>
 
 </Project>

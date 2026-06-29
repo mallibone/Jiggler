@@ -1,15 +1,16 @@
 using System.Runtime.InteropServices;
 using CoreGraphics;
+using MouseJiggler.Services;
 using ObjCRuntime;
 
 namespace MouseJiggler.Interop;
 
 /// <summary>
-/// Thin P/Invoke layer over the CoreGraphics event APIs used to read system idle
-/// time and nudge the mouse cursor. All entry points are part of the public
-/// CoreGraphics framework and are App Sandbox compatible.
+/// macOS <see cref="IMouseInput"/> backed by the CoreGraphics event APIs used to read system
+/// idle time and nudge the mouse cursor. All entry points are part of the public CoreGraphics
+/// framework and are App Sandbox compatible.
 /// </summary>
-internal static class CoreGraphicsNative
+internal sealed class CoreGraphicsNative : IMouseInput
 {
 	// CGEventSourceStateID
 	private const int HidSystemState = 1; // kCGEventSourceStateHIDSystemState
@@ -28,16 +29,17 @@ internal static class CoreGraphicsNative
 	/// Seconds since the last HID input event of any kind — the system idle time.
 	/// Mirrors the idle tracking the original Python script did with a listener.
 	/// </summary>
-	public static double GetIdleSeconds()
+	public double GetIdleSeconds()
 		=> CGEventSourceSecondsSinceLastEventType(HidSystemState, AnyInputEventType);
 
 	/// <summary>Current cursor location in the global (top-left origin) coordinate space.</summary>
-	public static CGPoint GetCursorPosition()
+	public MousePoint GetCursorPosition()
 	{
 		var ev = CGEventCreate(IntPtr.Zero);
 		try
 		{
-			return ev == IntPtr.Zero ? CGPoint.Empty : CGEventGetLocation(ev);
+			var p = ev == IntPtr.Zero ? CGPoint.Empty : CGEventGetLocation(ev);
+			return new MousePoint(p.X, p.Y);
 		}
 		finally
 		{
@@ -51,9 +53,9 @@ internal static class CoreGraphicsNative
 	/// machine registers as "active" (Teams/Slack stay available). Requires the
 	/// user to have granted Accessibility (Post Events) permission.
 	/// </summary>
-	public static void PostMouseMove(CGPoint target)
+	public void PostMouseMove(MousePoint target)
 	{
-		var ev = CGEventCreateMouseEvent(IntPtr.Zero, MouseMoved, target, MouseButtonLeft);
+		var ev = CGEventCreateMouseEvent(IntPtr.Zero, MouseMoved, new CGPoint(target.X, target.Y), MouseButtonLeft);
 		if (ev == IntPtr.Zero)
 			return;
 		try
@@ -71,17 +73,17 @@ internal static class CoreGraphicsNative
 	/// permission and is fully sandbox-clean, but does not reset the HID idle timer
 	/// as reliably as a synthetic event.
 	/// </summary>
-	public static void WarpCursor(CGPoint target)
-		=> CGWarpMouseCursorPosition(target);
+	public void WarpCursor(MousePoint target)
+		=> CGWarpMouseCursorPosition(new CGPoint(target.X, target.Y));
 
 	/// <summary>True if the app may already post events (Accessibility granted).</summary>
-	public static bool CanPostEvents() => CGPreflightPostEventAccess();
+	public bool CanPostEvents() => CGPreflightPostEventAccess();
 
 	/// <summary>
 	/// Asks the system to prompt the user for the Accessibility (Post Events)
 	/// permission. Returns the current grant state; the prompt is handled by macOS.
 	/// </summary>
-	public static bool RequestPostEventsAccess() => CGRequestPostEventAccess();
+	public bool RequestPostEventsAccess() => CGRequestPostEventAccess();
 
 	[DllImport(Constants.CoreGraphicsLibrary)]
 	private static extern double CGEventSourceSecondsSinceLastEventType(int stateID, uint eventType);
