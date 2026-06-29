@@ -31,6 +31,8 @@ public static class MauiProgram
 		builder.AddMauiDevFlowAgent();
 #endif
 
+		builder.Services.AddSingleton<MainPage>();
+
 		return builder.Build();
 	}
 }

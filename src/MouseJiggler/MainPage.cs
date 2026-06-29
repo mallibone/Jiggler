@@ -16,6 +16,7 @@ public class MainPage : ContentPage
 	private static readonly Color Gray = Color.FromArgb("#8E8E93");
 
 	private readonly MouseJiggleService _service = new(MouseInputFactory.Create());
+	private readonly IPreferences _preferences;
 
 	private readonly Border _statusDot;
 	private readonly Label _statusText;
@@ -29,12 +30,13 @@ public class MainPage : ContentPage
 	private readonly Stepper _thresholdStepper;
 	private readonly Border _permissionBanner;
 
-	public MainPage()
+	public MainPage(IPreferences preferences)
 	{
+		_preferences = preferences;
 		Title = "Mouse Jiggler";
 		this.SetAppThemeColor(BackgroundColorProperty, Color.FromArgb("#F2F2F7"), Color.FromArgb("#1A1A1C"));
 
-		var savedThreshold = Preferences.Default.Get(IdleThresholdKey, DefaultIdleThreshold);
+		var savedThreshold = _preferences.Get(IdleThresholdKey, DefaultIdleThreshold);
 		_service.IdleThresholdSeconds = savedThreshold;
 
 		// ---- Header --------------------------------------------------------
@@ -278,7 +280,7 @@ public class MainPage : ContentPage
 		var seconds = Math.Round(e.NewValue);
 		_service.IdleThresholdSeconds = seconds;
 		_thresholdValue.Text = $"{seconds:0} s";
-		Preferences.Default.Set(IdleThresholdKey, seconds);
+		_preferences.Set(IdleThresholdKey, seconds);
 	}
 
 	private void OnStatusChanged(JiggleStatus status)

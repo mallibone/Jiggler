@@ -8,7 +8,8 @@ public class App : Application
 {
 	protected override Window CreateWindow(IActivationState? activationState)
 	{
-		var window = new Window(new MainPage())
+		var mainPage = IPlatformApplication.Current!.Services.GetRequiredService<MainPage>();
+		var window = new Window(mainPage)
 		{
 			Title = "Mouse Jiggler",
 			Width = 430,
