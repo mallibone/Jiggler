@@ -24,6 +24,21 @@ public class App : Application
 		MacOSWindow.SetFullSizeContentView(window, false);
 #endif
 
+#if WINDOWS
+		// Explicitly set the WPF window icon once the platform window exists. This drives
+		// the top-left title-bar icon and the taskbar icon reliably — including in the
+		// single-file Release build, where the .exe-icon fallback can fail. The icon is
+		// embedded as a WPF resource (see the .csproj <Resource> entry).
+		window.HandlerChanged += (_, _) =>
+		{
+			if (window.Handler?.PlatformView is System.Windows.Window platformWindow)
+			{
+				platformWindow.Icon = new System.Windows.Media.Imaging.BitmapImage(
+					new Uri("pack://application:,,,/appicon.ico"));
+			}
+		};
+#endif
+
 		return window;
 	}
 }
