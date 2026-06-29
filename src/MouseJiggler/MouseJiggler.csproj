@@ -63,6 +63,9 @@
     <!-- Allows the Windows TFM to be restored/evaluated on non-Windows hosts (e.g. macOS).
          Actually building/running the Windows head still requires a Windows machine. -->
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
+    <!-- Win32 icon embedded into the .exe: drives the Explorer/file icon and is the
+         taskbar/title-bar fallback. -->
+    <ApplicationIcon>Platforms\Windows\appicon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!--
@@ -93,6 +96,11 @@
 
     <!-- WPF entry point: declares the [STAThread] Main and the MauiWPFApplication host. -->
     <ApplicationDefinition Include="Platforms\Windows\MauiWpfHost.xaml" />
+
+    <!-- Embed the icon as a WPF resource so it's loadable via pack URI at runtime
+         (App.cs sets Window.Icon). Embedding in the assembly manifest survives the
+         single-file Release publish, where the .exe-icon fallback is unreliable. -->
+    <Resource Include="Platforms\Windows\appicon.ico" />
 
     <!-- macOS-only sources (AppKit / CoreGraphics) live in a plain folder so the macOS head
          compiles them reliably; keep them out of the Windows build. -->
