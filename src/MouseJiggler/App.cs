@@ -1,4 +1,6 @@
+#if MACOS
 using Microsoft.Maui.Platforms.MacOS.Platform;
+#endif
 
 namespace MouseJiggler;
 
@@ -13,11 +15,13 @@ public class App : Application
 			Height = 600,
 		};
 
+#if MACOS
 		// Native macOS titlebar: keep a normal (non full-size) titlebar so content
 		// sits cleanly below it and never overlaps the traffic lights.
 		MacOSWindow.SetTitlebarStyle(window, MacOSTitlebarStyle.Unified);
 		MacOSWindow.SetTitleVisibility(window, MacOSTitleVisibility.Visible);
 		MacOSWindow.SetFullSizeContentView(window, false);
+#endif
 
 		return window;
 	}

@@ -15,7 +15,7 @@ public class MainPage : ContentPage
 	private static readonly Color Red = Color.FromArgb("#FF3B30");
 	private static readonly Color Gray = Color.FromArgb("#8E8E93");
 
-	private readonly MouseJiggleService _service = new();
+	private readonly MouseJiggleService _service = new(MouseInputFactory.Create());
 
 	private readonly Border _statusDot;
 	private readonly Label _statusText;
@@ -61,7 +61,7 @@ public class MainPage : ContentPage
 
 		var title = new Label { Text = "Mouse Jiggler", FontSize = 22, FontAttributes = FontAttributes.Bold };
 		title.SetAppThemeColor(Label.TextColorProperty, Colors.Black, Colors.White);
-		var subtitle = new Label { Text = "Keeps your Mac awake", FontSize = 13, TextColor = Gray };
+		var subtitle = new Label { Text = "Keeps your computer awake", FontSize = 13, TextColor = Gray };
 
 		var header = new HorizontalStackLayout
 		{
@@ -256,6 +256,7 @@ public class MainPage : ContentPage
 
 	private async void OnOpenSettingsClicked(object? sender, EventArgs e)
 	{
+#if MACOS
 		try
 		{
 			await Launcher.Default.OpenAsync(
@@ -265,6 +266,11 @@ public class MainPage : ContentPage
 		{
 			// Settings URL scheme not available — nothing actionable to do.
 		}
+#else
+		// The permission banner (and this button) only surface on macOS, where synthetic
+		// events can be blocked. On other platforms there is no permission gate.
+		await Task.CompletedTask;
+#endif
 	}
 
 	private void OnThresholdChanged(object? sender, ValueChangedEventArgs e)
@@ -312,7 +318,7 @@ public class MainPage : ContentPage
 		{
 			case JiggleMethod.SyntheticActive:
 				_statusDot.BackgroundColor = Green;
-				_methodText.Text = "Synthetic events — keeping your Mac active.";
+				_methodText.Text = "Synthetic events — keeping your computer active.";
 				_permissionBanner.IsVisible = false;
 				break;
 			case JiggleMethod.WarpFallback:
