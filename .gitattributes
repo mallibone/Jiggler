@@ -1,0 +1,4 @@
+# Windows scripts must carry CRLF endings everywhere — including the Linux CI checkout
+# that attaches them to the GitHub release.
+scripts/*.ps1 text eol=crlf
+scripts/*.cmd text eol=crlf

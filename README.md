@@ -1,11 +1,16 @@
-# Mouse Jiggler (macOS)
+# Mouse Jiggler
 
-A native macOS app that nudges the mouse cursor by ±1px after the machine has been
-idle for a configurable threshold (default 30 s) — keeping the Mac "active". It is a
-.NET MAUI port of `mouse_jiggle.py`, built on the
-[dotnet/maui-labs native macOS (AppKit) backend](https://github.com/dotnet/maui-labs/tree/main/platforms/MacOS)
-(`net10.0-macos`, **not** Mac Catalyst), and is structured to be publishable to the
-Mac App Store.
+A native desktop app that nudges the mouse cursor by ±1px after the machine has been
+idle for a configurable threshold (default 30 s) — keeping it "active". It is a
+.NET MAUI port of `mouse_jiggle.py` with two heads: macOS on the
+[dotnet/maui-labs native AppKit backend](https://github.com/dotnet/maui-labs/tree/main/platforms/MacOS)
+(`net10.0-macos`, **not** Mac Catalyst, structured to be publishable to the Mac App
+Store) and Windows on the maui-labs WPF backend (`net10.0-windows`, shipped as a single
+self-contained exe). For locked-down Windows machines there is also a
+[script-only alternative](#windows-script-alternative-no-exe) with no binary at all,
+and for machines where even scripts are blocked, a
+[keep-awake web page](#web-page-keep-awake-for-fully-locked-down-machines) that needs
+nothing but a browser.
 
 ## How it works
 
@@ -25,6 +30,11 @@ and checks whether the system idle timer actually reset: if it did, synthetic ev
 work (shown as "Synthetic events — keeping your Mac active"); if not, it falls back to
 a cursor warp and shows a banner prompting the user to grant Accessibility and relaunch
 (a fresh TCC grant only takes effect for new processes).
+
+While jiggling is active the app also holds an OS keep-awake assertion —
+`NSProcessInfo.BeginActivity` on macOS (which additionally opts out of App Nap, so the
+jiggle timer keeps firing when the app is in the background), `SetThreadExecutionState`
+on Windows — so the screen stays awake and the app does **not** need to stay focused.
 
 The window shows a live indicator — running state, idle progress, a jiggle counter and
 the last-jiggle time — plus a "Test jiggle now" button for instant confirmation.
@@ -107,6 +117,82 @@ These steps require a paid Apple Developer account and cannot be scripted here:
 > The cursor-warp fallback keeps the app functional even if the user declines the
 > Accessibility permission, which helps with the "works without elevated permission"
 > review expectation.
+
+## Windows: script alternative (no exe)
+
+Some corporate machines block `MouseJiggler-win-x64.exe`: it is a compressed,
+self-extracting, **unsigned** single-file binary, which is exactly what SmartScreen and
+AV heuristics flag ("unknown publisher"). The long-term fix is Authenticode
+code-signing the exe (mirroring the macOS signing/notarization already in CI); until
+then, `scripts/` contains a zero-binary alternative that ships with every release:
+
+| File | Purpose |
+| --- | --- |
+| `scripts/MouseJiggler.ps1` | The jiggler: same logic as the app (`GetLastInputInfo` idle check, `SendInput` ±1px nudge, `SetThreadExecutionState` keep-awake) |
+| `scripts/MouseJiggler.cmd` | Double-clickable launcher (`powershell -NoProfile -ExecutionPolicy Bypass`) |
+
+Usage: double-click `MouseJiggler.cmd`, or from a PowerShell prompt:
+
+```powershell
+.\MouseJiggler.ps1                          # default: nudge after 30 s idle
+.\MouseJiggler.ps1 -IdleThresholdSeconds 60
+```
+
+Stop with Ctrl+C — the keep-awake state is always released on exit.
+
+**Limitations (stated honestly):** the script needs PowerShell **FullLanguage** mode.
+Under Constrained Language Mode (WDAC/AppLocker lockdown) `Add-Type` is blocked and the
+script fails fast with a clear message — there is no script-level workaround in such
+environments. AppLocker can also block unsigned `.ps1` files outright, and a
+machine-wide GPO execution policy overrides `-ExecutionPolicy Bypass`. If your users
+hit any of those, point them at the [web page](#web-page-keep-awake-for-fully-locked-down-machines)
+below — or ship a signed exe, which is the only full-featured answer.
+
+## Web page: keep-awake for fully locked-down machines
+
+For users who can run neither the exe nor PowerShell (non-technical users on
+WDAC/AppLocker-locked corporate machines), `web/index.html` is a single static page
+that uses the browser's [Screen Wake Lock API](https://developer.mozilla.org/en-US/docs/Web/API/Screen_Wake_Lock_API)
+(`navigator.wakeLock`) to hold the same OS keep-awake assertion the app holds. It
+works in Edge and Chrome (also Safari/Firefox), requires no install and no admin
+rights, and runs entirely client-side — nothing is sent anywhere.
+
+**What it can and cannot do — a browser page is deliberately sandboxed:**
+
+- ✅ Keeps the display awake, which prevents timeout-based screen off / screensaver
+  lock while the tab is open.
+- ⚠️ The lock only holds **while the tab is visible**. Minimizing the browser releases
+  it (the page re-acquires it automatically when the tab is shown again). Users should
+  leave the browser window open, even small or off to one side.
+- ❌ It **cannot move the mouse** — no web API can synthesize OS input — so Teams/Slack
+  presence still drifts to "Away", and a GPO that locks strictly on absence of
+  keyboard/mouse input may still lock. For those cases only the app or script helps.
+
+### Hosting on Azure Static Web Apps (free tier)
+
+The resource is defined as Bicep in `infra/main.bicep` (Free tier, name and region
+parameterized). One-time setup; afterwards `.github/workflows/deploy-web.yml`
+redeploys on every push to `main` that touches `web/`:
+
+```bash
+az login
+az group create --name rg-mousejiggler --location westeurope
+az deployment group create --resource-group rg-mousejiggler \
+  --template-file infra/main.bicep
+
+# Pipe the deployment token straight into a GitHub Actions secret:
+az staticwebapp secrets list --name mousejiggler-web \
+  --resource-group rg-mousejiggler --query "properties.apiKey" -o tsv |
+  gh secret set AZURE_STATIC_WEB_APPS_API_TOKEN
+
+# First deploy (or just push a change under web/):
+gh workflow run deploy-web
+```
+
+The site URL is the `defaultHostname` deployment output (also via `az staticwebapp
+show --name mousejiggler-web --resource-group rg-mousejiggler --query
+"defaultHostname" -o tsv`) — give that link to your users. (The Wake Lock API
+requires HTTPS, which Static Web Apps provides by default.)
 
 ## Local dev: DevFlow inspection (Debug only)
 

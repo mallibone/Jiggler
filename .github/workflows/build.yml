@@ -175,6 +175,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Needed for the script alternative under scripts/ — artifacts only cover the built heads.
+      - uses: actions/checkout@v4
+
       - name: Download artifacts
         uses: actions/download-artifact@v4
         with:
@@ -188,7 +191,7 @@ jobs:
         run: |
           set -euo pipefail
           gh release delete latest --yes --cleanup-tag || true
-          gh release create latest dist/* \
+          gh release create latest dist/* scripts/MouseJiggler.ps1 scripts/MouseJiggler.cmd \
             --target "$GITHUB_SHA" \
             --title "Latest build" \
             --notes "Automated build from main @ ${GITHUB_SHA:0:7}" \
