@@ -15,7 +15,7 @@ public class MainPage : ContentPage
 	private static readonly Color Red = Color.FromArgb("#FF3B30");
 	private static readonly Color Gray = Color.FromArgb("#8E8E93");
 
-	private readonly MouseJiggleService _service = new(MouseInputFactory.Create());
+	private readonly MouseJiggleService _service = new(MouseInputFactory.Create(), KeepAwakeFactory.Create());
 	private readonly IPreferences _preferences;
 
 	private readonly Border _statusDot;

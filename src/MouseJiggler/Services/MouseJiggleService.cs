@@ -51,15 +51,17 @@ public sealed class MouseJiggleService : IDisposable
 	private const double IdleResetProofSeconds = 2.0;
 
 	private readonly IMouseInput _input;
+	private readonly IKeepAwake _keepAwake;
 	private readonly Timer _timer;
 	private int _direction = 1; // alternates between +1 and -1, like the Python script
 	private bool? _syntheticWorks; // null = unknown/untested yet
 	private bool _proofPending;    // a synthetic post is awaiting an idle-reset check
 	private double _proofBaseline; // idle seconds at the moment of that post
 
-	public MouseJiggleService(IMouseInput input)
+	public MouseJiggleService(IMouseInput input, IKeepAwake keepAwake)
 	{
 		_input = input;
+		_keepAwake = keepAwake;
 		_timer = new Timer(CheckIntervalSeconds * 1000) { AutoReset = true };
 		_timer.Elapsed += OnTick;
 	}
@@ -96,6 +98,7 @@ public sealed class MouseJiggleService : IDisposable
 			_input.RequestPostEventsAccess();
 
 		IsRunning = true;
+		_keepAwake.Begin();
 		_timer.Start();
 		RaiseStatus(idle: _input.GetIdleSeconds(), justJiggled: false);
 	}
@@ -106,6 +109,7 @@ public sealed class MouseJiggleService : IDisposable
 			return;
 
 		_timer.Stop();
+		_keepAwake.End();
 		IsRunning = false;
 		RaiseStatus(idle: _input.GetIdleSeconds(), justJiggled: false);
 	}
@@ -180,5 +184,6 @@ public sealed class MouseJiggleService : IDisposable
 	{
 		_timer.Elapsed -= OnTick;
 		_timer.Dispose();
+		_keepAwake.End();
 	}
 }

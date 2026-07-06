@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8" />
+	<meta name="viewport" content="width=device-width, initial-scale=1" />
+	<title>Stay Awake — Mouse Jiggler</title>
+	<meta name="description" content="Keeps your computer's screen awake while this tab stays open. Nothing to install." />
+	<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>☕</text></svg>" />
+	<style>
+		:root {
+			--bg: #f4f6f8;
+			--card: #ffffff;
+			--text: #1a2330;
+			--muted: #5b6878;
+			--accent: #2563eb;
+			--accent-hover: #1d4ed8;
+			--ok: #16a34a;
+			--warn: #b45309;
+			--warn-bg: #fef3c7;
+			--err: #dc2626;
+			--err-bg: #fee2e2;
+			--border: #e2e8f0;
+		}
+		@media (prefers-color-scheme: dark) {
+			:root {
+				--bg: #0f1520;
+				--card: #1a2330;
+				--text: #e8edf4;
+				--muted: #93a1b3;
+				--accent: #3b82f6;
+				--accent-hover: #60a5fa;
+				--ok: #4ade80;
+				--warn: #fbbf24;
+				--warn-bg: #3a2e10;
+				--err: #f87171;
+				--err-bg: #3a1515;
+				--border: #2b3648;
+			}
+		}
+		* { box-sizing: border-box; margin: 0; padding: 0; }
+		body {
+			font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+			background: var(--bg);
+			color: var(--text);
+			min-height: 100vh;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			padding: 1.5rem;
+			line-height: 1.55;
+		}
+		main {
+			background: var(--card);
+			border: 1px solid var(--border);
+			border-radius: 16px;
+			padding: 2.5rem 2rem;
+			max-width: 30rem;
+			width: 100%;
+			text-align: center;
+			box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
+		}
+		h1 { font-size: 1.4rem; margin-bottom: 0.4rem; }
+		.subtitle { color: var(--muted); font-size: 0.95rem; margin-bottom: 1.8rem; }
+		/* The big status dot: gray = off, pulsing green = holding the wake lock. */
+		.dot {
+			width: 84px;
+			height: 84px;
+			border-radius: 50%;
+			margin: 0 auto 1.2rem;
+			background: var(--border);
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			font-size: 2.2rem;
+			transition: background 0.3s;
+		}
+		.dot.on {
+			background: var(--ok);
+			animation: pulse 2.4s ease-in-out infinite;
+		}
+		@keyframes pulse {
+			0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45); }
+			50% { box-shadow: 0 0 0 18px rgba(34, 197, 94, 0); }
+		}
+		#status { font-size: 1.05rem; font-weight: 600; margin-bottom: 0.3rem; }
+		#detail { color: var(--muted); font-size: 0.9rem; min-height: 2.6em; margin-bottom: 1.4rem; }
+		button {
+			font: inherit;
+			font-weight: 600;
+			color: #fff;
+			background: var(--accent);
+			border: none;
+			border-radius: 10px;
+			padding: 0.85rem 2.2rem;
+			cursor: pointer;
+			transition: background 0.15s;
+		}
+		button:hover { background: var(--accent-hover); }
+		button.stop { background: var(--muted); }
+		.banner {
+			border-radius: 10px;
+			padding: 0.7rem 1rem;
+			font-size: 0.88rem;
+			text-align: left;
+			margin-top: 1.4rem;
+			display: none;
+		}
+		.banner.warn { display: block; background: var(--warn-bg); color: var(--warn); }
+		.banner.err { display: block; background: var(--err-bg); color: var(--err); }
+		.fineprint {
+			margin-top: 1.8rem;
+			padding-top: 1.2rem;
+			border-top: 1px solid var(--border);
+			color: var(--muted);
+			font-size: 0.82rem;
+			text-align: left;
+		}
+		.fineprint ul { padding-left: 1.2rem; margin-top: 0.4rem; }
+		.fineprint li { margin-bottom: 0.25rem; }
+	</style>
+</head>
+<body>
+	<main>
+		<h1>Stay Awake</h1>
+		<p class="subtitle">Keeps this computer's screen awake — nothing to install.</p>
+
+		<div class="dot" id="dot">☕</div>
+		<p id="status">Checking your browser…</p>
+		<p id="detail"></p>
+
+		<button id="toggle" hidden>Keep my computer awake</button>
+
+		<div class="banner" id="banner"></div>
+
+		<div class="fineprint">
+			Good to know:
+			<ul>
+				<li><strong>Leave this tab visible.</strong> Minimizing the browser or hiding the tab pauses
+					the keep-awake; it resumes automatically when the tab is shown again.</li>
+				<li>This keeps the <em>screen</em> awake. It cannot move your mouse, so chat apps
+					(Teams, Slack) may still show you as "Away".</li>
+				<li>Nothing is sent anywhere — this page runs entirely in your browser.</li>
+			</ul>
+		</div>
+	</main>
+
+	<script>
+		"use strict";
+
+		const dot = document.getElementById("dot");
+		const statusEl = document.getElementById("status");
+		const detailEl = document.getElementById("detail");
+		const toggleBtn = document.getElementById("toggle");
+		const banner = document.getElementById("banner");
+
+		let wakeLock = null;      // the active WakeLockSentinel, if any
+		let wantAwake = false;    // the user's intent — survives visibility-triggered releases
+		let sinceMs = null;       // when the current awake session started
+		let tickTimer = null;
+
+		function fmtElapsed(ms) {
+			const s = Math.floor(ms / 1000);
+			const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60);
+			if (h > 0) return `${h} h ${m} min`;
+			if (m > 0) return `${m} min`;
+			return `${s} s`;
+		}
+
+		function render() {
+			if (wakeLock) {
+				dot.classList.add("on");
+				statusEl.textContent = "Your computer is being kept awake";
+				detailEl.textContent = sinceMs ? `Awake for ${fmtElapsed(Date.now() - sinceMs)}. Leave this tab open and visible.` : "";
+				toggleBtn.textContent = "Stop";
+				toggleBtn.classList.add("stop");
+			} else if (wantAwake) {
+				dot.classList.remove("on");
+				statusEl.textContent = "Paused — tab is hidden";
+				detailEl.textContent = "The keep-awake resumes as soon as this tab is visible again.";
+				toggleBtn.textContent = "Stop";
+				toggleBtn.classList.add("stop");
+			} else {
+				dot.classList.remove("on");
+				statusEl.textContent = "Not keeping your computer awake";
+				detailEl.textContent = "Click the button below to start.";
+				toggleBtn.textContent = "Keep my computer awake";
+				toggleBtn.classList.remove("stop");
+			}
+		}
+
+		async function acquire() {
+			try {
+				wakeLock = await navigator.wakeLock.request("screen");
+				if (!sinceMs) sinceMs = Date.now();
+				banner.className = "banner";
+				// The browser releases the lock itself when the tab is hidden or the
+				// system intervenes — reflect that and re-acquire on visibilitychange.
+				wakeLock.addEventListener("release", () => { wakeLock = null; render(); });
+				if (!tickTimer) tickTimer = setInterval(render, 1000);
+				render();
+			} catch (err) {
+				wantAwake = false;
+				banner.className = "banner err";
+				banner.textContent = "Could not enable the keep-awake (" + err.name + "). " +
+					"Make sure this tab is visible and try again.";
+				render();
+			}
+		}
+
+		function releaseLock() {
+			wantAwake = false;
+			sinceMs = null;
+			if (tickTimer) { clearInterval(tickTimer); tickTimer = null; }
+			if (wakeLock) wakeLock.release(); // fires the 'release' handler, which nulls it
+			else render();
+		}
+
+		toggleBtn.addEventListener("click", () => {
+			if (wantAwake) releaseLock();
+			else { wantAwake = true; acquire(); }
+		});
+
+		document.addEventListener("visibilitychange", () => {
+			if (wantAwake && !wakeLock && document.visibilityState === "visible") acquire();
+			else render();
+		});
+
+		if ("wakeLock" in navigator) {
+			toggleBtn.hidden = false;
+			// Try to start right away — the API allows it while the page is visible.
+			// If the browser refuses (some require a click first), the button remains.
+			wantAwake = true;
+			acquire();
+		} else {
+			statusEl.textContent = "This browser can't keep the screen awake";
+			detailEl.textContent = "";
+			banner.className = "banner warn";
+			banner.textContent = "Your browser does not support the Screen Wake Lock feature. " +
+				"Please open this page in Microsoft Edge or Google Chrome.";
+		}
+	</script>
+</body>
+</html>
